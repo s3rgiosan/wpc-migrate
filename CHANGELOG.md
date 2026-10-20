@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-21
+
 ### Added
 
 - `wpc-migrate localwp list` lists LocalWP sites with their status, PHP version, database, and multisite mode.
@@ -17,4 +19,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Must-use plugins and drop-ins are set aside during wp-container's first-start install and restored before the import.
 - `--dry-run` shows the migration plan without changing anything.
 
-[Unreleased]: https://github.com/s3rgiosan/wpc-migrate/commits/main
+[Unreleased]: https://github.com/s3rgiosan/wpc-migrate/compare/1.0.0...HEAD
+[1.0.0]: https://github.com/s3rgiosan/wpc-migrate/releases/tag/1.0.0
