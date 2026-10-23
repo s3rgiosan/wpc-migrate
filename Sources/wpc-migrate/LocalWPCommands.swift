@@ -113,7 +113,7 @@ extension LocalWPCommand {
         @Flag(help: "Leave Mailpit off (LocalWP sites always have it).")
         var noMailpit = false
 
-        @Option(help: "How to bring over symlinks that point outside the site: mount (live) or copy. Asked when omitted.")
+        @Option(help: "How to bring over symlinks that point outside the site: mount (live, folders only), copy, or skip. Asked per link when omitted.")
         var symlinks: SymlinkMode?
 
         @Flag(help: "Create or reset wp-container's admin/password login after import.")
@@ -181,7 +181,9 @@ extension LocalWPCommand {
             }
 
             try client.requireMinimumVersion()
-            options.symlinks = try symlinkMode(for: plan.externalLinks.filter(\.targetExists))
+            if symlinks == nil {
+                options.symlinkChoices = try askSymlinkModes(for: plan.externalLinks.filter(\.targetExists))
+            }
             migrator.options = options
             plan.warnings.forEach(Console.warn)
             let result = try migrator.run()
@@ -198,26 +200,55 @@ extension LocalWPCommand {
             for (path, target) in result.mounts.sorted(by: { $0.key < $1.key }) {
                 print("  mount: \(path) -> \(target)")
             }
+            for path in result.skippedLinks {
+                print("  skipped: \(path)")
+            }
             if let dumpFile = result.dumpFile { print("  dump: \(dumpFile)") }
         }
 
-        /// `--symlinks` when given; otherwise asks on a terminal. A JSON or
+        /// Asks how to bring over each link, on a terminal. A JSON or
         /// non-interactive run must pass `--symlinks`.
-        private func symlinkMode(for links: [ExternalLink]) throws -> SymlinkMode {
-            if let symlinks { return symlinks }
-            guard !links.isEmpty else { return .mount }
+        private func askSymlinkModes(for links: [ExternalLink]) throws -> [String: SymlinkMode] {
+            guard !links.isEmpty else { return [:] }
             guard !json, isatty(STDIN_FILENO) == 1, isatty(STDERR_FILENO) == 1 else {
-                throw ValidationError("The site has \(links.count) symlink(s) to folders outside it. Pass --symlinks mount or --symlinks copy.")
+                throw ValidationError("The site has \(links.count) symlink(s) to paths outside it. Pass --symlinks mount, copy, or skip.")
             }
 
-            var prompt = "This site links to \(links.count) folder(s) outside it:\n"
+            Self.prompt("This site has \(links.count) symlink(s) to paths outside it. Mount a folder to keep it live, copy its contents, or skip the link.\n")
+            var modes: [String: SymlinkMode] = [:]
             for link in links {
-                prompt += "  \(link.path) -> \(link.target)\(link.isMountable ? "" : " (copied: can't be mounted)")\n"
+                let kind = link.targetIsDirectory ? "folder" : "file"
+                let choices = link.isMountable ? "[M/c/s]" : "[C/s]"
+                Self.prompt("  \(link.path) -> \(link.target) (\(kind)) \(choices) ")
+                modes[link.path] = Self.readSymlinkMode(allowsMount: link.isMountable)
             }
-            prompt += "Mount them so they stay live, or copy their contents? [M/c] "
-            FileHandle.standardError.write(Data(prompt.utf8))
-            let answer = readLine()?.trimmingCharacters(in: .whitespaces).lowercased() ?? ""
-            return answer.hasPrefix("c") ? .copy : .mount
+            return modes
+        }
+
+        /// Reads one answer, asking again until it is valid. An empty answer or
+        /// the end of input picks the capitalized default.
+        private static func readSymlinkMode(allowsMount: Bool) -> SymlinkMode {
+            let fallback: SymlinkMode = allowsMount ? .mount : .copy
+            while let line = readLine() {
+                let answer = line.trimmingCharacters(in: .whitespaces).lowercased()
+                switch answer {
+                case "":
+                    return fallback
+                case "m" where allowsMount, "mount" where allowsMount:
+                    return .mount
+                case "c", "copy":
+                    return .copy
+                case "s", "skip":
+                    return .skip
+                default:
+                    prompt(allowsMount ? "  Answer m, c, or s: " : "  Answer c or s: ")
+                }
+            }
+            return fallback
+        }
+
+        private static func prompt(_ text: String) {
+            FileHandle.standardError.write(Data(text.utf8))
         }
 
         private func makeOptions() -> MigrationOptions {
@@ -252,6 +283,7 @@ struct DryRun: Encodable {
     var tablePrefix: String
     var dumpStrategy: DumpStrategy?
     var externalLinks: [ExternalLink]
+    var internalLinks: [InternalLink]
     var addons: [String]
     var warnings: [String]
 
@@ -268,6 +300,7 @@ struct DryRun: Encodable {
         tablePrefix = plan.tablePrefix
         dumpStrategy = strategy
         externalLinks = plan.externalLinks
+        internalLinks = plan.internalLinks
         self.addons = addons
         warnings = plan.warnings
     }
@@ -284,7 +317,8 @@ struct DryRun: Encodable {
             "Export via:    \(dumpStrategy?.summary ?? "the --dump file")",
             "Add-ons:       \(addons.isEmpty ? "none" : addons.joined(separator: ", "))",
         ]
-        lines += externalLinks.filter(\.targetExists).map { "Symlink:       \($0.path) -> \($0.target)" }
+        lines += externalLinks.filter(\.targetExists).map { "Symlink:       \($0.path) -> \($0.target) (\($0.targetIsDirectory ? "folder" : "file"))" }
+        lines += internalLinks.map { "Symlink:       \($0.path) -> \($0.destination) (made relative)" }
         lines += warnings.map { "warning: \($0)" }
         return lines.joined(separator: "\n")
     }

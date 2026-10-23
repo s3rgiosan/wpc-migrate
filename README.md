@@ -47,7 +47,7 @@ wpc-migrate localwp <site> [options]
 | `--php-version <x.y>` | PHP version. Defaults to the LocalWP site's. |
 | `--https` | Turn on HTTPS. |
 | `--no-mailpit` | Leave Mailpit off. It is on by default because every LocalWP site has it. |
-| `--symlinks mount\|copy` | How to bring over symlinks to folders outside the site. Asked when omitted. |
+| `--symlinks mount\|copy\|skip` | How to bring over every symlink to a path outside the site. Asked per link when omitted. |
 | `--reset-admin` | Create or reset wp-container's `admin` / `password` login. Without it, the site keeps its LocalWP users. |
 | `--dump <file>` | Import this `.sql` or `.sql.gz` dump instead of exporting from LocalWP. |
 | `--source-url <url>` | The dump's site URL, when it can't be read from the database. |
@@ -66,7 +66,12 @@ wpc-migrate localwp <site> [options]
 - **Add-ons.** Xdebug, Redis, and Elasticsearch are turned on when the LocalWP site uses them. Mailpit is turned on unless `--no-mailpit` is passed.
 - **Subdomain networks.** HTTPS is turned on, because wp-container serves a subdomain network's sites as `https://<site>.<slug>.localhost` through its HTTPS proxy. Links stored as `http://` are moved to `https://`.
 - **Must-use plugins and drop-ins.** wp-container installs WordPress on the site's first start, before the database is imported. `mu-plugins` and `wp-content` drop-ins are set aside for that first start, so code that expects the site's tables can't stop the install, and put back before the import.
-- **Linked folders.** Plugins or themes symlinked to folders outside the site are bind-mounted, so edits in those folders show up in the site straight away. With `--symlinks copy`, their contents are copied instead.
+- **Symlinks.** Each symlink to a path outside the site is mounted, copied, or skipped:
+  - `mount` bind-mounts a linked folder, so edits in it show up in the site straight away. Only folders can be mounted, so a linked file is copied.
+  - `copy` copies what the link points to.
+  - `skip` leaves the link out of the new site.
+
+  Without `--symlinks`, each link is asked about in turn. Absolute symlinks that point inside the site, such as the `db.php` drop-in Query Monitor creates, become relative links and keep working.
 
 ## Limits
 

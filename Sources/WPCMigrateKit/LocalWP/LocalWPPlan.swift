@@ -19,8 +19,10 @@ public struct LocalWPPlan: Sendable {
     public var phpVersion: String?
     public var wordpressVersion: String?
     public var tablePrefix: String
-    /// Symlinks that won't resolve inside the container.
+    /// Symlinks to paths outside the site, which won't resolve inside the container.
     public var externalLinks: [ExternalLink]
+    /// Absolute symlinks into the site, rewritten as relative links.
+    public var internalLinks: [InternalLink]
     /// LocalWP's `wp-config.php`, or nil when the site has none in `app/public`.
     public var wpConfig: String?
     public var warnings: [String]
@@ -54,7 +56,9 @@ public struct LocalWPPlan: Sendable {
             phpVersion = Self.minimumPHP
         }
 
-        externalLinks = SymlinkScanner.scan(folder)
+        let links = SymlinkScanner.scan(folder)
+        externalLinks = links.externalLinks
+        internalLinks = links.internalLinks
         for link in externalLinks where !link.targetExists {
             warnings.append("\(link.path) is a broken symlink (\(link.target)) and is skipped.")
         }

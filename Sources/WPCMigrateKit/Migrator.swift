@@ -8,7 +8,10 @@ public struct MigrationOptions: Sendable {
     public var https = false
     public var mailpit = true
     public var resetAdmin = false
+    /// How to bring over each external link that `symlinkChoices` doesn't name.
     public var symlinks = SymlinkMode.mount
+    /// A mode per external link, keyed by its WordPress-relative path.
+    public var symlinkChoices: [String: SymlinkMode] = [:]
     public var dumpFile: URL?
     public var sourceURL: String?
     public var keepDump = false
@@ -27,6 +30,8 @@ public struct MigrationResult: Encodable, Sendable {
     public var dumpFile: String?
     /// WordPress-relative path to host folder, for each bind-mounted symlink.
     public var mounts: [String: String]
+    /// WordPress-relative paths of the links left out with `skip`.
+    public var skippedLinks: [String]
     public var addons: [String]
     public var warnings: [String]
 }
@@ -103,10 +108,10 @@ public struct Migrator: Sendable {
             warnings.append("Turned on HTTPS: subdomain network sites are served as https://<site>.\(WPCSlug.make(siteName)).localhost.")
         }
 
-        var symlinks = options.symlinks
-        let mountable = plan.externalLinks.contains(where: \.isMountable)
-        if symlinks == .mount, mountable, try !wpc.supportsMounts() {
-            symlinks = .copy
+        var canMount = true
+        let wantsMount = plan.externalLinks.contains { symlinkMode(for: $0) == .mount }
+        if wantsMount, try !wpc.supportsMounts() {
+            canMount = false
             warnings.append("This wpc can't mount folders (no `create --mount`); linked folders were copied.")
         }
 
@@ -132,9 +137,10 @@ public struct Migrator: Sendable {
         log("Copying WordPress files.")
         let wordpress = folder.appendingPathComponent("wordpress")
         let mounts: [String: String]
+        let skippedLinks: [String]
         let parked: [String]
         do {
-            mounts = try placeFiles(in: wordpress, symlinks: symlinks)
+            (mounts, skippedLinks) = try placeFiles(in: wordpress, canMount: canMount)
             parked = try BootCode.park(in: wordpress)
         } catch {
             discardFolder(folder)
@@ -232,6 +238,7 @@ public struct Migrator: Sendable {
             dumpStrategy: strategy,
             dumpFile: keptDump,
             mounts: mounts,
+            skippedLinks: skippedLinks,
             addons: addons + (usesHTTPS ? ["https"] : []),
             warnings: warnings
         )
@@ -246,23 +253,45 @@ public struct Migrator: Sendable {
         return output
     }
 
-    /// Clones `app/public` into `destination`, resolves external symlinks, and
-    /// writes the rewritten `wp-config.php` and, for single sites, Apache
-    /// rewrite rules. Returns the folders to bind-mount.
-    func placeFiles(in destination: URL, symlinks: SymlinkMode) throws -> [String: String] {
-        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+    /// The mode for `link`: its own choice, else the run's. A link that can't
+    /// be mounted is copied.
+    func symlinkMode(for link: ExternalLink, canMount: Bool = true) -> SymlinkMode {
+        let chosen = options.symlinkChoices[link.path] ?? options.symlinks
+        if chosen == .mount, !(canMount && link.isMountable) {
+            return .copy
+        }
+        return chosen
+    }
+
+    /// Clones `app/public` into `destination`, makes absolute links into the
+    /// site relative, resolves external symlinks, and writes the rewritten
+    /// `wp-config.php` and, for single sites, Apache rewrite rules. Returns the
+    /// folders to bind-mount and the links left out.
+    func placeFiles(in destination: URL, canMount: Bool) throws -> (mounts: [String: String], skipped: [String]) {
+        let manager = FileManager.default
+        try manager.createDirectory(at: destination, withIntermediateDirectories: true)
         try clone(plan.site.wordpressFolder.path + "/.", to: destination.path)
-        try? FileManager.default.removeItem(at: destination.appendingPathComponent("local-xdebuginfo.php"))
+        try? manager.removeItem(at: destination.appendingPathComponent("local-xdebuginfo.php"))
+
+        for link in plan.internalLinks {
+            let copied = destination.appendingPathComponent(link.path)
+            try manager.removeItem(at: copied)
+            try manager.createSymbolicLink(atPath: copied.path, withDestinationPath: link.destination)
+        }
 
         var mounts: [String: String] = [:]
+        var skipped: [String] = []
         for link in plan.externalLinks {
             let copied = destination.appendingPathComponent(link.path)
-            try FileManager.default.removeItem(at: copied)
+            try manager.removeItem(at: copied)
             guard link.targetExists else { continue }
-            if symlinks == .mount, link.isMountable {
+            switch symlinkMode(for: link, canMount: canMount) {
+            case .mount:
                 mounts[link.path] = link.target
-            } else {
+            case .copy:
                 try clone(link.target, to: copied.path)
+            case .skip:
+                skipped.append(link.path)
             }
         }
 
@@ -273,7 +302,7 @@ public struct Migrator: Sendable {
         if plan.site.multisite == .none {
             try Htaccess.writeIfMissing(wordpressFolder: destination)
         }
-        return mounts
+        return (mounts, skipped)
     }
 
     /// Copies with APFS clones where the volume supports them.
