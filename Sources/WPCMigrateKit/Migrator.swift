@@ -76,10 +76,16 @@ public struct Migrator: Sendable {
         return addons
     }
 
-    /// Subdomain networks reach their sites as `*.<slug>.localhost`, which
-    /// wp-container serves only through its HTTPS proxy.
+    /// Subdomain networks reach their sites as `*.<host>`, which wp-container
+    /// serves only through its HTTPS proxy.
     public var usesHTTPS: Bool {
         options.https || plan.site.multisite == .subdomain
+    }
+
+    /// The new site's domain: `--domain`, else the LocalWP site's own.
+    public var domain: String? {
+        if let domain = options.domain { return domain }
+        return plan.site.domain.isEmpty ? nil : plan.site.domain
     }
 
     public var siteName: String {
@@ -105,7 +111,8 @@ public struct Migrator: Sendable {
         }
 
         if site.multisite == .subdomain, !options.https {
-            warnings.append("Turned on HTTPS: subdomain network sites are served as https://<site>.\(WPCSlug.make(siteName)).localhost.")
+            let host = domain ?? "\(slug).localhost"
+            warnings.append("Turned on HTTPS: subdomain network sites are served as https://<site>.\(host).")
         }
 
         var canMount = true
@@ -133,6 +140,9 @@ public struct Migrator: Sendable {
                 warnings.append("Rewrote MySQL 8 collations on \(result.rewrittenLines) schema line(s) for MariaDB.")
             }
         }
+        // The LocalWP site served over HTTPS keeps its https:// URL.
+        let sourceScheme = sourceURL.flatMap { URL(string: $0)?.scheme?.lowercased() }
+        let https = usesHTTPS || sourceScheme == "https"
 
         log("Copying WordPress files.")
         let wordpress = folder.appendingPathComponent("wordpress")
@@ -153,7 +163,7 @@ public struct Migrator: Sendable {
             created = try wpc.create(
                 name: siteName,
                 parentFolder: folder.deletingLastPathComponent().path,
-                domain: options.domain,
+                domain: domain,
                 phpVersion: options.phpVersion ?? plan.phpVersion,
                 multisite: site.multisite.wpcValue,
                 mounts: mounts
@@ -175,7 +185,7 @@ public struct Migrator: Sendable {
                 log("Turning on \(addon).")
                 try wpc.enable(addon, slug: created.slug)
             }
-            if usesHTTPS {
+            if https {
                 log("Turning on HTTPS.")
                 try wpc.enableHTTPS(created.slug)
             }
@@ -205,7 +215,7 @@ public struct Migrator: Sendable {
             throw error
         }
 
-        if usesHTTPS, let host = URL(string: importResult.localURL ?? created.url)?.host {
+        if https, let host = URL(string: importResult.localURL ?? created.url)?.host {
             log("Moving links to HTTPS.")
             warnings += upgradeToHTTPS(slug: created.slug, host: host)
         }
@@ -239,7 +249,7 @@ public struct Migrator: Sendable {
             dumpFile: keptDump,
             mounts: mounts,
             skippedLinks: skippedLinks,
-            addons: addons + (usesHTTPS ? ["https"] : []),
+            addons: addons + (https ? ["https"] : []),
             warnings: warnings
         )
     }

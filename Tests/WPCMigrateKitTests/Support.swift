@@ -78,7 +78,7 @@ final class LockedFlag: @unchecked Sendable {
 
 /// Writes a fabricated dump without running MySQL.
 struct FakeDumper: DatabaseDumping {
-    var homeURL = "https://example-site.test"
+    var homeURL = "http://example-site.test"
 
     func strategy(for site: LocalWPSite) -> DumpStrategy {
         .temporaryServer

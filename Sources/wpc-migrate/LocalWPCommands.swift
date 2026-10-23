@@ -101,7 +101,7 @@ extension LocalWPCommand {
         @Option(help: "Parent folder for the new site (default: wp-container's sites folder).")
         var path: String?
 
-        @Option(help: "Custom domain for the new site, e.g. example-site.test.")
+        @Option(help: "Domain for the new site (default: the LocalWP site's domain).")
         var domain: String?
 
         @Option(help: "PHP version for the new site (default: the LocalWP site's).")
@@ -169,6 +169,7 @@ extension LocalWPCommand {
                     plan: plan,
                     options: options,
                     siteFolder: migrator.siteFolder.path,
+                    domain: migrator.domain,
                     strategy: options.dumpFile == nil ? dumper.strategy(for: localSite) : nil,
                     addons: migrator.addons + (migrator.usesHTTPS ? ["https"] : [])
                 )
@@ -275,6 +276,7 @@ struct DryRun: Encodable {
     var name: String
     var wordpressFolder: String
     var siteFolder: String
+    var domain: String?
     var status: String
     var php: String?
     var wordpress: String?
@@ -287,11 +289,12 @@ struct DryRun: Encodable {
     var addons: [String]
     var warnings: [String]
 
-    init(plan: LocalWPPlan, options: MigrationOptions, siteFolder: String, strategy: DumpStrategy?, addons: [String]) {
+    init(plan: LocalWPPlan, options: MigrationOptions, siteFolder: String, domain: String?, strategy: DumpStrategy?, addons: [String]) {
         localSiteID = plan.site.id
         name = options.name ?? plan.site.name
         wordpressFolder = plan.site.wordpressFolder.path
         self.siteFolder = siteFolder
+        self.domain = domain
         status = plan.site.status.rawValue
         php = options.phpVersion ?? plan.phpVersion
         wordpress = plan.wordpressVersion
@@ -310,6 +313,7 @@ struct DryRun: Encodable {
             "Site:          \(name) (\(localSiteID), \(status))",
             "Files:         \(wordpressFolder)",
             "New folder:    \(siteFolder)",
+            "Domain:        \(domain ?? "none")",
             "WordPress:     \(wordpress ?? "unknown")",
             "PHP:           \(php ?? "wpc default")",
             "Database:      \(database ?? "unknown"), table prefix \(tablePrefix)",

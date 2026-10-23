@@ -37,7 +37,11 @@ final class MigratorTests: XCTestCase {
         }
     }
 
-    private func makeMigrator(runner: FakeRunner, configure: (inout MigrationOptions) -> Void = { _ in }) throws -> Migrator {
+    private func makeMigrator(
+        runner: FakeRunner,
+        dumper: FakeDumper = FakeDumper(),
+        configure: (inout MigrationOptions) -> Void = { _ in }
+    ) throws -> Migrator {
         let plan = try LocalWPPlan(site: Fixtures.site(path: folder.url.appendingPathComponent("local/example-site")))
         var options = MigrationOptions()
         options.parentFolder = parent.path
@@ -46,7 +50,7 @@ final class MigratorTests: XCTestCase {
             plan: plan,
             options: options,
             wpc: WPCClient(executable: URL(fileURLWithPath: "/usr/local/bin/wpc"), runner: runner),
-            dumper: FakeDumper(),
+            dumper: dumper,
             runner: runner,
             log: { _ in }
         )
@@ -71,6 +75,39 @@ final class MigratorTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: wordpress.appendingPathComponent(".htaccess").path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: wordpress.appendingPathComponent("index.php").path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: wordpress.appendingPathComponent("local-xdebuginfo.php").path))
+    }
+
+    func testCreatesTheSiteOnTheLocalWPDomain() throws {
+        try Fixtures.wordpress(in: folder, at: "local/example-site/app/public")
+        let runner = makeRunner()
+
+        _ = try makeMigrator(runner: runner).run()
+
+        let create = try XCTUnwrap(runner.calls.first { WPCClient.commandName($0) == "create" })
+        let index = try XCTUnwrap(create.firstIndex(of: "--domain"))
+        XCTAssertEqual(create[index + 1], "example-site.test")
+    }
+
+    func testDomainOptionReplacesTheLocalWPDomain() throws {
+        try Fixtures.wordpress(in: folder, at: "local/example-site/app/public")
+        let runner = makeRunner()
+
+        _ = try makeMigrator(runner: runner) { $0.domain = "other-site.test" }.run()
+
+        let create = try XCTUnwrap(runner.calls.first { WPCClient.commandName($0) == "create" })
+        let index = try XCTUnwrap(create.firstIndex(of: "--domain"))
+        XCTAssertEqual(create[index + 1], "other-site.test")
+    }
+
+    func testTurnsOnHTTPSWhenTheLocalWPSiteUsesIt() throws {
+        try Fixtures.wordpress(in: folder, at: "local/example-site/app/public")
+        let runner = makeRunner()
+
+        let result = try makeMigrator(runner: runner, dumper: FakeDumper(homeURL: "https://example-site.test")).run()
+
+        let commands = runner.calls.map(WPCClient.commandName)
+        XCTAssertEqual(Array(commands.prefix(6)), ["list", "create", "xdebug", "mailpit", "https enable", "start"])
+        XCTAssertEqual(result.addons.last, "https")
     }
 
     func testParksMustUsePluginsUntilTheFirstStart() throws {
