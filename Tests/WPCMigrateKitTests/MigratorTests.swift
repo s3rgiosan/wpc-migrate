@@ -200,6 +200,59 @@ final class MigratorTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: copied.path))
     }
 
+    func testAppliesEachLinksOwnMode() throws {
+        let wordpress = try Fixtures.wordpress(in: folder, at: "local/example-site/app/public")
+        let plugins = wordpress.appendingPathComponent("wp-content/plugins")
+        try FileManager.default.createDirectory(at: plugins, withIntermediateDirectories: true)
+        for name in ["mounted", "copied", "skipped"] {
+            let plugin = try folder.folder("repos/\(name)")
+            try folder.write("repos/\(name)/plugin.php", "<?php\n")
+            try FileManager.default.createSymbolicLink(atPath: plugins.appendingPathComponent(name).path, withDestinationPath: plugin.path)
+        }
+        let runner = makeRunner()
+
+        let result = try makeMigrator(runner: runner) { options in
+            options.symlinks = .mount
+            options.symlinkChoices = ["wp-content/plugins/copied": .copy, "wp-content/plugins/skipped": .skip]
+        }.run()
+
+        let newPlugins = parent.appendingPathComponent("example-site/wordpress/wp-content/plugins")
+        XCTAssertEqual(Array(result.mounts.keys), ["wp-content/plugins/mounted"])
+        XCTAssertEqual(result.skippedLinks, ["wp-content/plugins/skipped"])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: newPlugins.appendingPathComponent("copied/plugin.php").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: newPlugins.appendingPathComponent("skipped").path))
+        XCTAssertNil(try? FileManager.default.destinationOfSymbolicLink(atPath: newPlugins.appendingPathComponent("skipped").path))
+    }
+
+    func testSkipOnlyLinksNeverChecksForMountSupport() throws {
+        let wordpress = try Fixtures.wordpress(in: folder, at: "local/example-site/app/public")
+        let plugin = try folder.folder("repos/example-plugin")
+        try FileManager.default.createDirectory(at: wordpress.appendingPathComponent("wp-content/plugins"), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(atPath: wordpress.appendingPathComponent("wp-content/plugins/example-plugin").path, withDestinationPath: plugin.path)
+        let runner = makeRunner()
+
+        let result = try makeMigrator(runner: runner) { $0.symlinks = .skip }.run()
+
+        XCTAssertEqual(result.mounts, [:])
+        XCTAssertEqual(runner.calls.map(WPCClient.commandName).filter { $0 == "create" }.count, 1)
+    }
+
+    func testMakesAbsoluteLinksIntoTheSiteRelative() throws {
+        let wordpress = try Fixtures.wordpress(in: folder, at: "local/example-site/app/public")
+        try folder.write("local/example-site/app/public/wp-content/plugins/example-plugin/wp-content/db.php", "<?php\n")
+        let dropIn = wordpress.appendingPathComponent("wp-content/plugins/example-plugin/wp-content/db.php")
+        try FileManager.default.createSymbolicLink(atPath: wordpress.appendingPathComponent("wp-content/db.php").path, withDestinationPath: dropIn.path)
+        let runner = makeRunner()
+
+        let result = try makeMigrator(runner: runner).run()
+
+        let link = parent.appendingPathComponent("example-site/wordpress/wp-content/db.php")
+        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: link.path), "plugins/example-plugin/wp-content/db.php")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: link.path))
+        XCTAssertEqual(result.mounts, [:])
+        XCTAssertEqual(result.skippedLinks, [])
+    }
+
     func testCopiesLinkedFoldersWhenWPCCannotMount() throws {
         let wordpress = try Fixtures.wordpress(in: folder, at: "local/example-site/app/public")
         let plugin = try folder.folder("repos/example-plugin")

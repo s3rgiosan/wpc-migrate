@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `--symlinks skip` and a skip answer leave a symlink out of the new site.
+- Without `--symlinks`, each symlink to a path outside the site is asked about separately, and the prompt says whether it points to a file or a folder.
+
+### Fixed
+
+- Absolute symlinks that point inside the site, such as Query Monitor's `db.php` drop-in, stay links in the new site, rewritten as relative links.
+- A must-use plugin or drop-in that is a relative symlink is put back after the first start.
+
 ## [1.0.0] - 2026-10-21
 
 ### Added

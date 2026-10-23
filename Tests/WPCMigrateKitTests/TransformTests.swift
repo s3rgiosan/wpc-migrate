@@ -146,14 +146,25 @@ final class SymlinkScannerTests: XCTestCase {
         try manager.createSymbolicLink(atPath: root.appendingPathComponent("wp-content/db.php").path, withDestinationPath: folder.url.appendingPathComponent("repos/drop-in.php").path)
         try manager.createSymbolicLink(atPath: root.appendingPathComponent("wp-content/broken").path, withDestinationPath: "/nonexistent/example")
         try manager.createSymbolicLink(atPath: root.appendingPathComponent("wp-content/gone").path, withDestinationPath: "../../../gone")
+        try manager.createSymbolicLink(atPath: root.appendingPathComponent("wp-content/plugins/absolute").path, withDestinationPath: root.appendingPathComponent("wp-content/plugins/inside").path)
 
-        let links = SymlinkScanner.scan(root)
+        let scan = SymlinkScanner.scan(root)
+        let links = scan.externalLinks
 
         XCTAssertEqual(links.map(\.path), ["wp-content/broken", "wp-content/db.php", "wp-content/gone", "wp-content/plugins/example-plugin"])
         XCTAssertEqual(links.map(\.isMountable), [false, false, false, true])
         XCTAssertEqual(links.map(\.targetExists), [false, true, false, true])
         XCTAssertEqual(links[0].target, "/nonexistent/example")
         XCTAssertEqual(links[3].target, outside.path)
+        XCTAssertEqual(scan.internalLinks, [InternalLink(path: "wp-content/plugins/absolute", destination: "inside")])
+    }
+
+    func testRelativeDestinations() {
+        XCTAssertEqual(SymlinkScanner.relativeDestination(from: "wp-content/db.php", to: "wp-content/plugins/example-plugin/wp-content/db.php"), "plugins/example-plugin/wp-content/db.php")
+        XCTAssertEqual(SymlinkScanner.relativeDestination(from: "wp-content/plugins/a/link.php", to: "wp-content/themes/b/file.php"), "../../themes/b/file.php")
+        XCTAssertEqual(SymlinkScanner.relativeDestination(from: "link", to: "wp-content/file.php"), "wp-content/file.php")
+        XCTAssertEqual(SymlinkScanner.relativeDestination(from: "wp-content/link", to: "wp-content"), ".")
+        XCTAssertEqual(SymlinkScanner.relativeDestination(from: "wp-content/plugins/link", to: ""), "../..")
     }
 }
 
