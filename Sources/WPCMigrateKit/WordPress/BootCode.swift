@@ -22,7 +22,7 @@ public enum BootCode {
         let content = wordpressFolder.appendingPathComponent("wp-content")
         let parking = content.appendingPathComponent(parkingFolder)
         var parked: [String] = []
-        for name in ["mu-plugins"] + dropIns where manager.fileExists(atPath: content.appendingPathComponent(name).path) {
+        for name in ["mu-plugins"] + dropIns where exists(content.appendingPathComponent(name)) {
             try manager.createDirectory(at: parking, withIntermediateDirectories: true)
             try manager.moveItem(at: content.appendingPathComponent(name), to: parking.appendingPathComponent(name))
             parked.append(name)
@@ -43,8 +43,8 @@ public enum BootCode {
         for name in parked {
             let source = parking.appendingPathComponent(name)
             let destination = content.appendingPathComponent(name)
-            guard manager.fileExists(atPath: source.path) else { continue }
-            guard manager.fileExists(atPath: destination.path) else {
+            guard exists(source) else { continue }
+            guard exists(destination) else {
                 do {
                     try manager.moveItem(at: source, to: destination)
                 } catch {
@@ -71,6 +71,12 @@ public enum BootCode {
         }
         try removeIfEmpty(parking)
         return left
+    }
+
+    /// Whether anything is at `url`, counting a symlink whose target is
+    /// missing. A relative link parked one folder deeper no longer resolves.
+    private static func exists(_ url: URL) -> Bool {
+        (try? FileManager.default.attributesOfItem(atPath: url.path)) != nil
     }
 
     /// Removes `folder` only when it is empty, so anything still parked stays on disk.

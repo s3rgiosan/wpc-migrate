@@ -12,6 +12,21 @@ final class BootCodeRestoreTests: XCTestCase {
         FileManager.default.fileExists(atPath: folder.url.appendingPathComponent(path).path)
     }
 
+    func testRestoresARelativeDropInLink() throws {
+        try folder.write("wp-content/plugins/example-plugin/wp-content/db.php", "<?php\n")
+        let link = folder.url.appendingPathComponent("wp-content/db.php")
+        try FileManager.default.createSymbolicLink(atPath: link.path, withDestinationPath: "plugins/example-plugin/wp-content/db.php")
+        let parked = try BootCode.park(in: folder.url)
+
+        let left = try BootCode.restore(parked, in: folder.url)
+
+        XCTAssertEqual(parked, ["db.php"])
+        XCTAssertEqual(left, [])
+        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: link.path), "plugins/example-plugin/wp-content/db.php")
+        XCTAssertTrue(exists("wp-content/db.php"))
+        XCTAssertFalse(exists("wp-content/.wpc-migrate-parked"))
+    }
+
     func testLeavesAParkedFileWhoseDestinationWasRecreated() throws {
         try folder.write("wp-content/object-cache.php", "<?php // parked\n")
         try folder.write("wp-content/mu-plugins/loader.php", "<?php\n")
