@@ -140,6 +140,9 @@ public struct Migrator: Sendable {
                 warnings.append("This wpc can't run nginx (no `create --web-server`); the site runs on Apache.")
             }
         }
+        if !nginx, !plan.nginxIncludes.isEmpty {
+            warnings.append("Custom nginx config is not carried over to Apache: \(plan.nginxIncludes.joined(separator: ", ")).")
+        }
 
         let work = try LocalWPDumper.makeWorkFolder()
         defer { try? FileManager.default.removeItem(at: work) }
@@ -170,6 +173,9 @@ public struct Migrator: Sendable {
         let parked: [String]
         do {
             (mounts, skippedLinks) = try placeFiles(in: wordpress, canMount: canMount)
+            if nginx {
+                try copyNginxIncludes(to: folder.appendingPathComponent("nginx"))
+            }
             parked = try BootCode.park(in: wordpress)
         } catch {
             discardFolder(folder)
@@ -337,6 +343,18 @@ public struct Migrator: Sendable {
     }
 
     /// Copies with APFS clones where the volume supports them.
+    /// Copies the custom nginx files LocalWP includes into the folder wpc
+    /// includes in the site's nginx server block.
+    private func copyNginxIncludes(to destination: URL) throws {
+        guard !plan.nginxIncludes.isEmpty else { return }
+        let manager = FileManager.default
+        let source = plan.site.path.appendingPathComponent("conf/nginx")
+        try manager.createDirectory(at: destination, withIntermediateDirectories: true)
+        for name in plan.nginxIncludes {
+            try manager.copyItem(at: source.appendingPathComponent(name), to: destination.appendingPathComponent(name))
+        }
+    }
+
     private func clone(_ source: String, to destination: String) throws {
         let result = try runner.run(URL(fileURLWithPath: "/bin/cp"), ["-c", "-R", source, destination])
         guard result.exitCode == 0 else {

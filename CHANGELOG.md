@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - The new site runs on the LocalWP site's web server, nginx or Apache, and `--web-server` picks the other one. nginx needs a wpc whose `create` accepts `--web-server`.
+- On nginx, the custom `.conf` files that LocalWP's `site.conf.hbs` includes, such as an uploads proxy, are copied to the new site's `nginx/` folder.
 
 ## [1.2.0] - 2026-10-23
 

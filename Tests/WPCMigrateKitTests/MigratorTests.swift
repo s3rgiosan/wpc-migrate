@@ -152,6 +152,32 @@ final class MigratorTests: XCTestCase {
         XCTAssertEqual(result.webServer, .apache)
     }
 
+    func testCopiesIncludedNginxConfigForNginxSites() throws {
+        try Fixtures.wordpress(in: folder, at: "local/example-site/app/public")
+        try folder.write("local/example-site/conf/nginx/example-proxy.conf", "location /example/ { return 204; }\n")
+        let runner = makeRunner()
+        var migrator = try makeMigrator(runner: runner)
+        migrator.plan.nginxIncludes = ["example-proxy.conf"]
+
+        _ = try migrator.run()
+
+        let copied = parent.appendingPathComponent("example-site/nginx/example-proxy.conf")
+        XCTAssertEqual(try String(contentsOf: copied, encoding: .utf8), "location /example/ { return 204; }\n")
+    }
+
+    func testLeavesNginxConfigOutOfApacheSites() throws {
+        try Fixtures.wordpress(in: folder, at: "local/example-site/app/public")
+        try folder.write("local/example-site/conf/nginx/example-proxy.conf", "location /example/ { return 204; }\n")
+        let runner = makeRunner()
+        var migrator = try makeMigrator(runner: runner) { $0.webServer = .apache }
+        migrator.plan.nginxIncludes = ["example-proxy.conf"]
+
+        let result = try migrator.run()
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: parent.appendingPathComponent("example-site/nginx").path))
+        XCTAssertTrue(result.warnings.contains("Custom nginx config is not carried over to Apache: example-proxy.conf."))
+    }
+
     func testParksMustUsePluginsUntilTheFirstStart() throws {
         try Fixtures.wordpress(in: folder, at: "local/example-site/app/public")
         try folder.write("local/example-site/app/public/wp-content/mu-plugins/loader.php", "<?php\n")

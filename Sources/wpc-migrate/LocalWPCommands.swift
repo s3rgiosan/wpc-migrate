@@ -294,6 +294,7 @@ struct DryRun: Encodable {
     var dumpStrategy: DumpStrategy?
     var externalLinks: [ExternalLink]
     var internalLinks: [InternalLink]
+    var nginxIncludes: [String]
     var addons: [String]
     var warnings: [String]
 
@@ -313,6 +314,7 @@ struct DryRun: Encodable {
         dumpStrategy = strategy
         externalLinks = plan.externalLinks
         internalLinks = plan.internalLinks
+        nginxIncludes = webServer == .nginx ? plan.nginxIncludes : []
         self.addons = addons
         warnings = plan.warnings
     }
@@ -333,6 +335,7 @@ struct DryRun: Encodable {
         ]
         lines += externalLinks.filter(\.targetExists).map { "Symlink:       \($0.path) -> \($0.target) (\($0.targetIsDirectory ? "folder" : "file"))" }
         lines += internalLinks.map { "Symlink:       \($0.path) -> \($0.destination) (made relative)" }
+        lines += nginxIncludes.map { "nginx config:  \($0)" }
         lines += warnings.map { "warning: \($0)" }
         return lines.joined(separator: "\n")
     }
