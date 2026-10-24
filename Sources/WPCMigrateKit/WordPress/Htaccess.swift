@@ -2,7 +2,7 @@ import Foundation
 
 /// WordPress's standard single-site rewrite rules. LocalWP serves sites with
 /// nginx, so its sites have no `.htaccess`, and Apache needs one for pretty
-/// permalinks.
+/// permalinks. nginx sites get one too, so a switch to Apache keeps working.
 public enum Htaccess {
     public static let singleSite = """
         # BEGIN WordPress

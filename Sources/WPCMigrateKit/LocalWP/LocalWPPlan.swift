@@ -7,7 +7,7 @@ public struct LocalWPPlan: Sendable {
     public static let minimumPHP = "8.1"
 
     /// The nginx config files every LocalWP site has. Anything else in
-    /// `conf/nginx` is a customization that wp-container's Apache won't apply.
+    /// `conf/nginx` is a customization that wp-container won't apply.
     static let stockNginxFiles: Set<String> = [
         "nginx.conf.hbs", "site.conf.hbs",
         "includes/gzip.conf.hbs", "includes/mime-types.conf.hbs", "includes/restrictions.conf.hbs",
@@ -66,7 +66,7 @@ public struct LocalWPPlan: Sendable {
         if site.webServer == "nginx" {
             let custom = Self.customNginxFiles(siteFolder: site.path)
             if !custom.isEmpty {
-                warnings.append("Custom nginx config is not carried over (wp-container serves with Apache): \(custom.joined(separator: ", ")).")
+                warnings.append("Custom nginx config is not carried over: \(custom.joined(separator: ", ")).")
             }
         }
 

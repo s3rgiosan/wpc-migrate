@@ -11,7 +11,12 @@ final class MigratorTests: XCTestCase {
     }
 
     /// A fake wpc that succeeds at everything; `fail` names a command to fail.
-    private func makeRunner(fail: String? = nil, supportsMounts: Bool = true, existingSlugs: [String] = []) -> FakeRunner {
+    private func makeRunner(
+        fail: String? = nil,
+        supportsMounts: Bool = true,
+        supportsWebServer: Bool = true,
+        existingSlugs: [String] = []
+    ) -> FakeRunner {
         let parentPath = parent.path
         return FakeRunner { arguments in
             let command = WPCClient.commandName(arguments)
@@ -23,7 +28,10 @@ final class MigratorTests: XCTestCase {
                 let sites = existingSlugs.map { #"{"slug": "\#($0)"}"# }.joined(separator: ",")
                 return ProcessResult(exitCode: 0, stdout: #"{"sites": [\#(sites)], "envs": []}"#)
             case "create" where arguments.contains("--help"):
-                return ProcessResult(exitCode: 0, stdout: supportsMounts ? "--mount <host-folder:path>" : "--json")
+                var help = ["--json"]
+                if supportsMounts { help.append("--mount <host-folder:path>") }
+                if supportsWebServer { help.append("--web-server <web-server>") }
+                return ProcessResult(exitCode: 0, stdout: help.joined(separator: "\n"))
             case "create":
                 let site = #"{"name": "Example Site", "slug": "example-site", "path": "\#(parentPath)/example-site", "url": "http://127.0.0.1:8899"}"#
                 return ProcessResult(exitCode: 0, stdout: site)
@@ -62,9 +70,10 @@ final class MigratorTests: XCTestCase {
 
         let result = try makeMigrator(runner: runner).run()
 
-        XCTAssertEqual(runner.calls.map(WPCClient.commandName), ["list", "create", "xdebug", "mailpit", "start", "db import"])
-        XCTAssertTrue(runner.calls[1].contains("--path"))
-        XCTAssertTrue(runner.calls[5].contains("--no-admin"))
+        XCTAssertEqual(runner.calls.map(WPCClient.commandName), ["list", "create", "create", "xdebug", "mailpit", "start", "db import"])
+        XCTAssertEqual(runner.calls[1], ["create", "--help"])
+        XCTAssertTrue(runner.calls[2].contains("--path"))
+        XCTAssertTrue(runner.calls[6].contains("--no-admin"))
         XCTAssertEqual(result.url, "http://127.0.0.1:8899")
         XCTAssertEqual(result.sourceURL, "https://example-site.test")
         XCTAssertEqual(result.addons, ["xdebug", "mailpit"])
@@ -83,7 +92,7 @@ final class MigratorTests: XCTestCase {
 
         _ = try makeMigrator(runner: runner).run()
 
-        let create = try XCTUnwrap(runner.calls.first { WPCClient.commandName($0) == "create" })
+        let create = try XCTUnwrap(runner.calls.first { WPCClient.commandName($0) == "create" && !$0.contains("--help") })
         let index = try XCTUnwrap(create.firstIndex(of: "--domain"))
         XCTAssertEqual(create[index + 1], "example-site.test")
     }
@@ -94,7 +103,7 @@ final class MigratorTests: XCTestCase {
 
         _ = try makeMigrator(runner: runner) { $0.domain = "other-site.test" }.run()
 
-        let create = try XCTUnwrap(runner.calls.first { WPCClient.commandName($0) == "create" })
+        let create = try XCTUnwrap(runner.calls.first { WPCClient.commandName($0) == "create" && !$0.contains("--help") })
         let index = try XCTUnwrap(create.firstIndex(of: "--domain"))
         XCTAssertEqual(create[index + 1], "other-site.test")
     }
@@ -106,8 +115,41 @@ final class MigratorTests: XCTestCase {
         let result = try makeMigrator(runner: runner, dumper: FakeDumper(homeURL: "https://example-site.test")).run()
 
         let commands = runner.calls.map(WPCClient.commandName)
-        XCTAssertEqual(Array(commands.prefix(6)), ["list", "create", "xdebug", "mailpit", "https enable", "start"])
+        XCTAssertEqual(Array(commands.prefix(7)), ["list", "create", "create", "xdebug", "mailpit", "https enable", "start"])
         XCTAssertEqual(result.addons.last, "https")
+    }
+
+    func testCreatesNginxSitesOnNginx() throws {
+        try Fixtures.wordpress(in: folder, at: "local/example-site/app/public")
+        let runner = makeRunner()
+
+        let result = try makeMigrator(runner: runner).run()
+
+        let create = try XCTUnwrap(runner.calls.first { WPCClient.commandName($0) == "create" && !$0.contains("--help") })
+        let index = try XCTUnwrap(create.firstIndex(of: "--web-server"))
+        XCTAssertEqual(create[index + 1], "nginx")
+        XCTAssertEqual(result.webServer, .nginx)
+    }
+
+    func testRunsOnApacheWhenWPCHasNoNginx() throws {
+        try Fixtures.wordpress(in: folder, at: "local/example-site/app/public")
+        let runner = makeRunner(supportsWebServer: false)
+
+        let result = try makeMigrator(runner: runner).run()
+
+        XCTAssertFalse(runner.calls.contains { $0.contains("--web-server") })
+        XCTAssertEqual(result.webServer, .apache)
+        XCTAssertTrue(result.warnings.contains("This wpc can't run nginx (no `create --web-server`); the site runs on Apache."))
+    }
+
+    func testApacheNeedsNoWebServerFlag() throws {
+        try Fixtures.wordpress(in: folder, at: "local/example-site/app/public")
+        let runner = makeRunner()
+
+        let result = try makeMigrator(runner: runner) { $0.webServer = .apache }.run()
+
+        XCTAssertFalse(runner.calls.contains { $0.contains("--help") || $0.contains("--web-server") })
+        XCTAssertEqual(result.webServer, .apache)
     }
 
     func testParksMustUsePluginsUntilTheFirstStart() throws {
@@ -268,7 +310,10 @@ final class MigratorTests: XCTestCase {
         try FileManager.default.createSymbolicLink(atPath: wordpress.appendingPathComponent("wp-content/plugins/example-plugin").path, withDestinationPath: plugin.path)
         let runner = makeRunner()
 
-        let result = try makeMigrator(runner: runner) { $0.symlinks = .skip }.run()
+        let result = try makeMigrator(runner: runner) { options in
+            options.symlinks = .skip
+            options.webServer = .apache
+        }.run()
 
         XCTAssertEqual(result.mounts, [:])
         XCTAssertEqual(runner.calls.map(WPCClient.commandName).filter { $0 == "create" }.count, 1)
@@ -318,7 +363,9 @@ final class MigratorTests: XCTestCase {
 
         _ = try migrator.run()
 
-        XCTAssertTrue(runner.calls[1].suffix(3).contains("subdirectory"))
+        let create = try XCTUnwrap(runner.calls.first { WPCClient.commandName($0) == "create" && !$0.contains("--help") })
+        let index = try XCTUnwrap(create.firstIndex(of: "--multisite"))
+        XCTAssertEqual(create[index + 1], "subdirectory")
         XCTAssertFalse(FileManager.default.fileExists(atPath: parent.appendingPathComponent("example-site/wordpress/.htaccess").path))
         XCTAssertEqual(runner.calls.last?.prefix(4), ["wp", "--json", "example-site", "--"])
     }

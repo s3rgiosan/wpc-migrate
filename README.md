@@ -45,6 +45,7 @@ wpc-migrate localwp <site> [options]
 | `--path <dir>` | Parent folder for the new site. Defaults to wp-container's sites folder. |
 | `--domain <host>` | Domain for the new site. Defaults to the LocalWP site's domain. |
 | `--php-version <x.y>` | PHP version. Defaults to the LocalWP site's. |
+| `--web-server apache\|nginx` | Web server. Defaults to the LocalWP site's. |
 | `--https` | Turn on HTTPS. It is on when the LocalWP site's URL uses `https://`. |
 | `--no-mailpit` | Leave Mailpit off. It is on by default because every LocalWP site has it. |
 | `--symlinks mount\|copy\|skip` | How to bring over every symlink to a path outside the site. Asked per link when omitted. |
@@ -62,7 +63,8 @@ wpc-migrate localwp <site> [options]
 - **Database.** The database is dumped with LocalWP's `mysqldump`. MySQL 8 `utf8mb4_0900_*` collations in table definitions are rewritten for MariaDB. Row data is left untouched.
 - **URLs.** The new site keeps the LocalWP site's domain, and turns on HTTPS when the LocalWP site's URL uses `https://`. With `--domain` or `--https`, `wpc db import` rewrites the LocalWP URL to the new site's URL across all tables, including every site of a multisite network.
 - **wp-config.php.** The database settings read wp-container's environment. The table prefix, salts, and custom constants are kept. Multisite constants are rewritten by wp-container for the new address.
-- **Rewrite rules.** Single sites get WordPress's standard `.htaccess`, because wp-container serves sites with Apache.
+- **Web server.** The site runs on the LocalWP site's web server. nginx needs a wpc whose `create` accepts `--web-server`; with an older wpc, the site runs on Apache.
+- **Rewrite rules.** Single sites get WordPress's standard `.htaccess`, which Apache needs for pretty permalinks. nginx sites get it too, so a switch to Apache keeps working.
 - **Add-ons.** Xdebug, Redis, and Elasticsearch are turned on when the LocalWP site uses them. Mailpit is turned on unless `--no-mailpit` is passed.
 - **Subdomain networks.** HTTPS is turned on, because wp-container serves a subdomain network's sites as `https://<site>.<domain>` through its HTTPS proxy. Links stored as `http://` are moved to `https://`.
 - **Must-use plugins and drop-ins.** wp-container installs WordPress on the site's first start, before the database is imported. `mu-plugins` and `wp-content` drop-ins are set aside for that first start, so code that expects the site's tables can't stop the install, and put back before the import.
