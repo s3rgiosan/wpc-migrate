@@ -4,7 +4,10 @@ import Foundation
 ///
 /// The database defines read wp-container's `WORDPRESS_DB_*` environment, and
 /// the multisite and URL constants are removed because wp-container's
-/// provisioning writes its own. The table prefix, salts, and every other
+/// provisioning writes its own. A `WP_ENVIRONMENT_TYPE` set to a plain string
+/// moves to the top, so code loaded earlier in the file sees it: WordPress
+/// VIP's `000-pre-vip-config/requires.php` allows `wp db` only when the
+/// environment is already `local`. The table prefix, salts, and every other
 /// constant stay as they are.
 public enum WPConfigTransformer {
     static let databaseDefaults: [(constant: String, variable: String, fallback: String)] = [
@@ -30,7 +33,7 @@ public enum WPConfigTransformer {
             text = removingGuardedDefines(constant, in: text)
             text = removingDefineLines(constant, in: text)
         }
-        return text
+        return movingEnvironmentTypeToTop(in: text)
     }
 
     /// The `$table_prefix` value, or nil when it isn't a plain string literal.
@@ -64,6 +67,19 @@ public enum WPConfigTransformer {
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines]) else { return text }
         let range = NSRange(text.startIndex..., in: text)
         return regex.stringByReplacingMatches(in: text, range: range, withTemplate: "")
+    }
+
+    /// Moves a line that defines `WP_ENVIRONMENT_TYPE` as a string literal to
+    /// just after the opening `<?php` line.
+    private static func movingEnvironmentTypeToTop(in text: String) -> String {
+        let literal = #"(?:'[A-Za-z0-9_-]*'|"[A-Za-z0-9_-]*")"#
+        let pattern = #"^[ \t]*define\s*\(\s*['"]WP_ENVIRONMENT_TYPE['"]\s*,\s*"# + literal + #"\s*\)\s*;[ \t]*(//[^\r\n]*)?\r?\n"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines]),
+              let opening = text.range(of: #"^<\?php[ \t]*\r?\n"#, options: .regularExpression),
+              let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+              let range = Range(match.range, in: text),
+              range.lowerBound >= opening.upperBound else { return text }
+        return String(text[..<opening.upperBound]) + text[range] + text[opening.upperBound..<range.lowerBound] + text[range.upperBound...]
     }
 
     /// Removes lines whose only statement is the define, including a trailing
