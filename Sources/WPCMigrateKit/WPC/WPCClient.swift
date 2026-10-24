@@ -75,6 +75,7 @@ public struct WPCClient: Sendable {
         domain: String?,
         phpVersion: String?,
         multisite: String?,
+        webServer: WebServer? = nil,
         mounts: [String: String] = [:]
     ) throws -> WPCSite {
         var arguments = ["create", name]
@@ -82,6 +83,7 @@ public struct WPCClient: Sendable {
         if let domain { arguments += ["--domain", domain] }
         if let phpVersion { arguments += ["--php-version", phpVersion] }
         if let multisite { arguments += ["--multisite", multisite] }
+        if let webServer { arguments += ["--web-server", webServer.rawValue] }
         for (path, folder) in mounts.sorted(by: { $0.key < $1.key }) {
             arguments += ["--mount", "\(folder):\(path)"]
         }
@@ -89,10 +91,10 @@ public struct WPCClient: Sendable {
         return try decode(WPCSite.self, from: try execute(arguments), command: "create")
     }
 
-    /// Whether `wpc create` accepts `--mount`.
-    public func supportsMounts() throws -> Bool {
-        let help = try runner.run(executable, ["create", "--help"])
-        return help.stdout.contains("--mount")
+    /// The `wpc create` options this wpc lists in its help.
+    public func createSupport() throws -> CreateSupport {
+        let help = try runner.run(executable, ["create", "--help"]).stdout
+        return CreateSupport(mounts: help.contains("--mount"), webServer: help.contains("--web-server"))
     }
 
     /// Slugs of every site and worktree env.
@@ -241,4 +243,12 @@ public struct WPCClient: Sendable {
         }
         return nil
     }
+}
+
+/// Optional `wpc create` options, which older wpc builds lack.
+public struct CreateSupport: Sendable, Equatable {
+    /// `--mount`, to bind-mount host folders.
+    public var mounts: Bool
+    /// `--web-server`, to run the site on nginx.
+    public var webServer: Bool
 }

@@ -51,6 +51,28 @@ final class LocalWPPlanTests: XCTestCase {
         XCTAssertFalse(plan.warnings[0].contains(".DS_Store"))
     }
 
+    func testCarriesCustomNginxFilesTheSiteIncludes() throws {
+        let folder = try TemporaryFolder()
+        try Fixtures.wordpress(in: folder, at: "example-site/app/public")
+        try folder.write("example-site/conf/nginx/site.conf.hbs", """
+            server {
+                include includes/wordpress-single.conf;
+                include example-proxy.conf;
+                include example-template.conf;
+                include includes/example-nested.conf;
+            }
+            """)
+        try folder.write("example-site/conf/nginx/example-proxy.conf", "location /example/ { return 204; }\n")
+        try folder.write("example-site/conf/nginx/example-template.conf", "listen {{port}};\n")
+        try folder.write("example-site/conf/nginx/includes/example-nested.conf", "location /nested/ { return 204; }\n")
+        try folder.write("example-site/conf/nginx/example-unused.conf", "location /unused/ { return 204; }\n")
+
+        let plan = try LocalWPPlan(site: Fixtures.site(path: folder.url.appendingPathComponent("example-site")))
+
+        XCTAssertEqual(plan.nginxIncludes, ["example-proxy.conf"])
+        XCTAssertEqual(plan.warnings, ["Custom nginx config is not carried over: example-template.conf, example-unused.conf, includes/example-nested.conf."])
+    }
+
     func testMissingWordPressThrows() throws {
         let folder = try TemporaryFolder()
         XCTAssertThrowsError(try LocalWPPlan(site: Fixtures.site(path: folder.url))) { error in

@@ -7,7 +7,7 @@ public struct LocalWPPlan: Sendable {
     public static let minimumPHP = "8.1"
 
     /// The nginx config files every LocalWP site has. Anything else in
-    /// `conf/nginx` is a customization that wp-container's Apache won't apply.
+    /// `conf/nginx` is a customization.
     static let stockNginxFiles: Set<String> = [
         "nginx.conf.hbs", "site.conf.hbs",
         "includes/gzip.conf.hbs", "includes/mime-types.conf.hbs", "includes/restrictions.conf.hbs",
@@ -25,6 +25,9 @@ public struct LocalWPPlan: Sendable {
     public var internalLinks: [InternalLink]
     /// LocalWP's `wp-config.php`, or nil when the site has none in `app/public`.
     public var wpConfig: String?
+    /// Custom nginx files that `site.conf.hbs` includes and wp-container can
+    /// include as they are: plain `.conf` files at the top of `conf/nginx`.
+    public var nginxIncludes: [String] = []
     public var warnings: [String]
 
     public init(site: LocalWPSite) throws {
@@ -64,9 +67,18 @@ public struct LocalWPPlan: Sendable {
         }
 
         if site.webServer == "nginx" {
+            let nginxFolder = site.path.appendingPathComponent("conf/nginx")
             let custom = Self.customNginxFiles(siteFolder: site.path)
-            if !custom.isEmpty {
-                warnings.append("Custom nginx config is not carried over (wp-container serves with Apache): \(custom.joined(separator: ", ")).")
+            let included = Self.includedNginxFiles(siteConf: nginxFolder.appendingPathComponent("site.conf.hbs"))
+            let carried = custom.filter { name in
+                guard included.contains(name), !name.contains("/"), name.hasSuffix(".conf") else { return false }
+                let contents = try? String(contentsOf: nginxFolder.appendingPathComponent(name), encoding: .utf8)
+                return contents.map { !$0.contains("{{") } ?? false
+            }
+            nginxIncludes = carried
+            let left = custom.filter { !carried.contains($0) }
+            if !left.isEmpty {
+                warnings.append("Custom nginx config is not carried over: \(left.joined(separator: ", ")).")
             }
         }
 
@@ -88,6 +100,13 @@ public struct LocalWPPlan: Sendable {
     static func wordpressVersion(in source: String) -> String? {
         guard let match = source.firstMatch(of: #/\$wp_version\s*=\s*'([^']+)'/#) else { return nil }
         return String(match.1)
+    }
+
+    /// The paths `site.conf.hbs` names in its `include` directives.
+    static func includedNginxFiles(siteConf: URL) -> Set<String> {
+        guard let contents = try? String(contentsOf: siteConf, encoding: .utf8) else { return [] }
+        let paths = contents.matches(of: #/include\s+["']?([^"';\s]+)["']?\s*;/#).map { String($0.1) }
+        return Set(paths)
     }
 
     static func customNginxFiles(siteFolder: URL) -> [String] {

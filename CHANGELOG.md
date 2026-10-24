@@ -5,6 +5,17 @@ All notable changes to wpc-migrate will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- The new site runs on the LocalWP site's web server, nginx or Apache, and `--web-server` picks the other one. nginx needs a wpc whose `create` accepts `--web-server`.
+- On nginx, the custom `.conf` files that LocalWP's `site.conf.hbs` includes, such as an uploads proxy, are copied to the new site's `nginx/` folder.
+
+### Fixed
+
+- A `WP_ENVIRONMENT_TYPE` set to a plain string moves to the top of `wp-config.php`, so WordPress VIP sites, which allow `wp db` only in a `local` environment, no longer fail the import.
+
 ## [1.2.0] - 2026-10-23
 
 ### Changed
