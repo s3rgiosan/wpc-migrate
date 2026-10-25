@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - On nginx, the custom `.conf` files that LocalWP's `site.conf.hbs` includes, such as an uploads proxy, are copied to the new site's `nginx/` folder.
 - Rules added straight into LocalWP's `site.conf.hbs`, such as an uploads proxy `location` block, go to the new site's `nginx/site-rules.conf`. `--dry-run` lists the file, and its JSON carries the rules.
 
+### Changed
+
+- The symlink prompt explains each answer (`m` mount, `c` copy, `s` skip) and that Enter picks the capitalized one.
+
 ### Fixed
 
 - A `WP_ENVIRONMENT_TYPE` set to a plain string moves to the top of `wp-config.php`, so WordPress VIP sites, which allow `wp db` only in a `local` environment, no longer fail the import.

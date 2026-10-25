@@ -221,7 +221,14 @@ extension LocalWPCommand {
                 throw ValidationError("The site has \(links.count) symlink(s) to paths outside it. Pass --symlinks mount, copy, or skip.")
             }
 
-            Self.prompt("This site has \(links.count) symlink(s) to paths outside it. Mount a folder to keep it live, copy its contents, or skip the link.\n")
+            var legend = "This site has \(links.count) symlink(s) to paths outside it. For each one, answer:\n"
+            if links.contains(where: \.isMountable) {
+                legend += "  m  mount the linked folder, so edits in it show up in the site straight away\n"
+            }
+            legend += "  c  copy what the link points to into the site\n"
+            legend += "  s  skip the link, leaving it out of the new site\n"
+            legend += "Press Enter for the capitalized choice.\n"
+            Self.prompt(legend)
             var modes: [String: SymlinkMode] = [:]
             for link in links {
                 let kind = link.targetIsDirectory ? "folder" : "file"
