@@ -64,7 +64,7 @@ wpc-migrate localwp <site> [options]
 - **URLs.** The new site keeps the LocalWP site's domain, and turns on HTTPS when the LocalWP site's URL uses `https://`. With `--domain` or `--https`, `wpc db import` rewrites the LocalWP URL to the new site's URL across all tables, including every site of a multisite network.
 - **wp-config.php.** The database settings read wp-container's environment. The table prefix, salts, and custom constants are kept. Multisite constants are rewritten by wp-container for the new address.
 - **Web server.** The site runs on the LocalWP site's web server. nginx needs a wpc whose `create` accepts `--web-server`; with an older wpc, the site runs on Apache.
-- **Custom nginx config.** On nginx, the custom `.conf` files that `site.conf.hbs` includes, such as an uploads proxy, are copied to the new site's `nginx/` folder, which wp-container includes in the site's server block.
+- **Custom nginx config.** On nginx, the custom `.conf` files that `site.conf.hbs` includes, such as an uploads proxy, are copied to the new site's `nginx/` folder, which wp-container includes in the site's server block. Rules added straight into `site.conf.hbs`, found by comparing it with LocalWP's stock template for the site's nginx version, go to `nginx/site-rules.conf`.
 - **Rewrite rules.** Single sites get WordPress's standard `.htaccess`, which Apache needs for pretty permalinks. nginx sites get it too, so a switch to Apache keeps working.
 - **Add-ons.** Xdebug, Redis, and Elasticsearch are turned on when the LocalWP site uses them. Mailpit is turned on unless `--no-mailpit` is passed.
 - **Subdomain networks.** HTTPS is turned on, because wp-container serves a subdomain network's sites as `https://<site>.<domain>` through its HTTPS proxy. Links stored as `http://` are moved to `https://`.
@@ -78,7 +78,7 @@ wpc-migrate localwp <site> [options]
 
 ## Limits
 
-- Custom nginx configuration is carried over only for nginx sites, and only plain `.conf` files at the top of the site's `conf/nginx` folder that `site.conf.hbs` includes. The plan lists any other non-stock files there.
+- Custom nginx configuration is carried over only for nginx sites: plain `.conf` files at the top of the site's `conf/nginx` folder that `site.conf.hbs` includes, and rules added to `site.conf.hbs` itself. Rules that use LocalWP's template values, or directives wp-container sets itself such as `root`, are listed in the plan instead. Changes to LocalWP's other stock nginx files are not carried over.
 - PHP versions older than 8.1 run on PHP 8.1.
 - While LocalWP's router holds ports 80 and 443, requests to the site's domain reach LocalWP, and wp-container's proxy takes ports 8080 and 8443 instead. Free ports 80 and 443, then restart wp-container so its proxy binds them.
 - LocalWP sites on MariaDB need `--dump`, because LocalWP ships no MariaDB client binaries.

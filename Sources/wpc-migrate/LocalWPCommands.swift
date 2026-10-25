@@ -155,7 +155,7 @@ extension LocalWPCommand {
         private func migrate() throws {
             let catalog = try location.catalog()
             let localSite = try catalog.find(site)
-            let plan = try LocalWPPlan(site: localSite)
+            let plan = try LocalWPPlan(site: localSite, stockNginxFolder: catalog.stockNginxFolder(for: localSite))
             var options = makeOptions()
 
             let runner = ProcessRunner(echoStderr: verbose)
@@ -295,6 +295,7 @@ struct DryRun: Encodable {
     var externalLinks: [ExternalLink]
     var internalLinks: [InternalLink]
     var nginxIncludes: [String]
+    var nginxSiteRules: String?
     var addons: [String]
     var warnings: [String]
 
@@ -315,6 +316,10 @@ struct DryRun: Encodable {
         externalLinks = plan.externalLinks
         internalLinks = plan.internalLinks
         nginxIncludes = webServer == .nginx ? plan.nginxIncludes : []
+        nginxSiteRules = webServer == .nginx ? plan.nginxSiteRules : nil
+        if nginxSiteRules != nil {
+            nginxIncludes.append("\(LocalWPPlan.siteRulesFileName) (rules added to site.conf.hbs)")
+        }
         self.addons = addons
         warnings = plan.warnings
     }

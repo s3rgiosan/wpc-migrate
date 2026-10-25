@@ -47,6 +47,7 @@ public struct LocalWPSite: Sendable, Equatable {
     public var database: Database?
     public var credentials: Credentials
     public var webServer: String?
+    public var webServerVersion: String?
     public var xdebug: Bool
     public var redis: Bool
     public var elasticsearch: Bool
@@ -103,6 +104,24 @@ public struct LocalWPCatalog: Sendable {
         }
     }
 
+    /// LocalWP's own nginx templates for the site's nginx version, from its
+    /// downloaded services or, failing that, the services Local.app ships.
+    public func stockNginxFolder(for site: LocalWPSite) -> URL? {
+        guard site.webServer == "nginx", let version = site.webServerVersion else { return nil }
+        let manager = FileManager.default
+        for services in [root.appendingPathComponent("lightning-services"), Self.bundledServices] {
+            let names = (try? manager.contentsOfDirectory(atPath: services.path)) ?? []
+            let matches = names.filter { $0 == "nginx-\(version)" || $0.hasPrefix("nginx-\(version)+") }
+            for name in matches.sorted().reversed() {
+                let conf = services.appendingPathComponent(name).appendingPathComponent("conf")
+                if manager.fileExists(atPath: conf.appendingPathComponent("site.conf.hbs").path) {
+                    return conf
+                }
+            }
+        }
+        return nil
+    }
+
     /// LocalWP's runtime folder for a site: the MySQL datadir, socket, and
     /// rendered configs.
     public func runFolder(for site: LocalWPSite) -> URL {
@@ -130,6 +149,7 @@ public struct LocalWPCatalog: Sendable {
             database: database(services: services, legacy: entry["database"] as? String),
             credentials: credentials,
             webServer: webServer(services: services, legacy: entry["webServer"] as? String),
+            webServerVersion: webServerVersion(services: services, legacy: entry["webServer"] as? String),
             xdebug: entry["xdebugEnabled"] as? Bool ?? false,
             redis: entry["redisEnabled"] as? Bool ?? false,
             elasticsearch: entry["elasticsearchEnabled"] as? Bool ?? false
@@ -178,6 +198,19 @@ public struct LocalWPCatalog: Sendable {
         guard let legacy, let dash = legacy.firstIndex(of: "-"),
               let kind = LocalWPSite.Database.Kind(rawValue: String(legacy[..<dash])) else { return nil }
         return .init(kind: kind, version: String(legacy[legacy.index(after: dash)...]))
+    }
+
+    /// The lightning services Local.app ships in its bundle.
+    static let bundledServices = URL(fileURLWithPath: "/Applications/Local.app/Contents/Resources/extraResources/lightning-services")
+
+    /// `services.nginx` / `services.apache`, falling back to the legacy
+    /// top-level `webServer` key (`"nginx-1.16.0"`).
+    private static func webServerVersion(services: [String: Any], legacy: String?) -> String? {
+        if let version = serviceVersion(services, "nginx") ?? serviceVersion(services, "apache") {
+            return version
+        }
+        guard let legacy, let dash = legacy.firstIndex(of: "-") else { return nil }
+        return String(legacy[legacy.index(after: dash)...])
     }
 
     private static func webServer(services: [String: Any], legacy: String?) -> String? {

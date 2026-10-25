@@ -140,8 +140,9 @@ public struct Migrator: Sendable {
                 warnings.append("This wpc can't run nginx (no `create --web-server`); the site runs on Apache.")
             }
         }
-        if !nginx, !plan.nginxIncludes.isEmpty {
-            warnings.append("Custom nginx config is not carried over to Apache: \(plan.nginxIncludes.joined(separator: ", ")).")
+        let nginxConfig = plan.nginxIncludes + (plan.nginxSiteRules == nil ? [] : ["the rules added to site.conf.hbs"])
+        if !nginx, !nginxConfig.isEmpty {
+            warnings.append("Custom nginx config is not carried over to Apache: \(nginxConfig.joined(separator: ", ")).")
         }
 
         let work = try LocalWPDumper.makeWorkFolder()
@@ -174,7 +175,7 @@ public struct Migrator: Sendable {
         do {
             (mounts, skippedLinks) = try placeFiles(in: wordpress, canMount: canMount)
             if nginx {
-                try copyNginxIncludes(to: folder.appendingPathComponent("nginx"))
+                try placeNginxConfig(in: folder.appendingPathComponent("nginx"))
             }
             parked = try BootCode.park(in: wordpress)
         } catch {
@@ -343,15 +344,19 @@ public struct Migrator: Sendable {
     }
 
     /// Copies with APFS clones where the volume supports them.
-    /// Copies the custom nginx files LocalWP includes into the folder wpc
-    /// includes in the site's nginx server block.
-    private func copyNginxIncludes(to destination: URL) throws {
-        guard !plan.nginxIncludes.isEmpty else { return }
+    /// Puts the custom nginx files LocalWP includes, and the rules added to
+    /// its `site.conf.hbs`, in the folder wpc includes in the site's nginx
+    /// server block.
+    private func placeNginxConfig(in destination: URL) throws {
+        guard !plan.nginxIncludes.isEmpty || plan.nginxSiteRules != nil else { return }
         let manager = FileManager.default
         let source = plan.site.path.appendingPathComponent("conf/nginx")
         try manager.createDirectory(at: destination, withIntermediateDirectories: true)
         for name in plan.nginxIncludes {
             try manager.copyItem(at: source.appendingPathComponent(name), to: destination.appendingPathComponent(name))
+        }
+        if let rules = plan.nginxSiteRules {
+            try rules.write(to: destination.appendingPathComponent(LocalWPPlan.siteRulesFileName), atomically: true, encoding: .utf8)
         }
     }
 
