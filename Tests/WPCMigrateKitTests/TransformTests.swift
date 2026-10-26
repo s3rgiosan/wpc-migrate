@@ -81,6 +81,19 @@ final class WPConfigTransformerTests: XCTestCase {
         XCTAssertEqual(output, "<?php\r\ndefine( 'WP_DEBUG', false );\r\n")
     }
 
+    func testMovesALiteralEnvironmentTypeToTheTop() {
+        let source = "<?php\nrequire_once __DIR__ . '/example-early.php';\ndefine( 'WP_ENVIRONMENT_TYPE', 'local' ); // example\n$x = 1;\n"
+        XCTAssertEqual(
+            WPConfigTransformer.transform(source),
+            "<?php\ndefine( 'WP_ENVIRONMENT_TYPE', 'local' ); // example\nrequire_once __DIR__ . '/example-early.php';\n$x = 1;\n"
+        )
+    }
+
+    func testLeavesAComputedEnvironmentTypeInPlace() {
+        let source = "<?php\n$env = 'local';\ndefine( 'WP_ENVIRONMENT_TYPE', $env );\n"
+        XCTAssertEqual(WPConfigTransformer.transform(source), source)
+    }
+
     func testTablePrefix() {
         XCTAssertEqual(WPConfigTransformer.tablePrefix(in: Fixtures.wpConfig), "ex_")
         XCTAssertNil(WPConfigTransformer.tablePrefix(in: "$table_prefix = getenv( 'PREFIX' );"))

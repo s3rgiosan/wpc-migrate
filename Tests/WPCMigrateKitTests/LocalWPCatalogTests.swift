@@ -54,6 +54,21 @@ final class LocalWPCatalogTests: XCTestCase {
         XCTAssertEqual(site.wordpressFolder.lastPathComponent, "public")
     }
 
+    func testFindsTheStockNginxTemplatesForTheSiteVersion() throws {
+        let (folder, catalog) = try makeCatalog()
+        try folder.write("lightning-services/nginx-1.26.1+3/conf/site.conf.hbs")
+        try folder.write("lightning-services/nginx-1.16.0+7/conf/site.conf.hbs")
+
+        let site = try catalog.find("abc123XYZ")
+        let legacy = try catalog.find("legacy-network.test")
+
+        XCTAssertEqual(site.webServerVersion, "1.26.1")
+        XCTAssertEqual(catalog.stockNginxFolder(for: site)?.deletingLastPathComponent().lastPathComponent, "nginx-1.26.1+3")
+        XCTAssertEqual(legacy.webServerVersion, "1.16.0")
+        XCTAssertEqual(catalog.stockNginxFolder(for: legacy)?.deletingLastPathComponent().lastPathComponent, "nginx-1.16.0+7")
+        XCTAssertNil(catalog.stockNginxFolder(for: try catalog.find("ghi789RST")))
+    }
+
     func testReadsLegacyKeys() throws {
         let (_, catalog) = try makeCatalog()
         let site = try catalog.find("legacy-network.test")

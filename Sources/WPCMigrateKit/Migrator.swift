@@ -5,6 +5,8 @@ public struct MigrationOptions: Sendable {
     public var parentFolder: String?
     public var domain: String?
     public var phpVersion: String?
+    /// The web server; the LocalWP site's when nil.
+    public var webServer: WebServer?
     public var https = false
     public var mailpit = true
     public var resetAdmin = false
@@ -32,6 +34,7 @@ public struct MigrationResult: Encodable, Sendable {
     public var mounts: [String: String]
     /// WordPress-relative paths of the links left out with `skip`.
     public var skippedLinks: [String]
+    public var webServer: WebServer
     public var addons: [String]
     public var warnings: [String]
 }
@@ -82,6 +85,11 @@ public struct Migrator: Sendable {
         options.https || plan.site.multisite == .subdomain
     }
 
+    /// The new site's web server: `--web-server`, else the LocalWP site's own.
+    public var webServer: WebServer? {
+        options.webServer ?? plan.site.webServer.flatMap(WebServer.init(rawValue:))
+    }
+
     /// The new site's domain: `--domain`, else the LocalWP site's own.
     public var domain: String? {
         if let domain = options.domain { return domain }
@@ -115,11 +123,26 @@ public struct Migrator: Sendable {
             warnings.append("Turned on HTTPS: subdomain network sites are served as https://<site>.\(host).")
         }
 
-        var canMount = true
+        // Apache is wpc's default, so only mounts and nginx need the help check.
         let wantsMount = plan.externalLinks.contains { symlinkMode(for: $0) == .mount }
-        if wantsMount, try !wpc.supportsMounts() {
+        let wantsNginx = webServer == .nginx
+        let support = wantsMount || wantsNginx ? try wpc.createSupport() : nil
+
+        var canMount = true
+        if wantsMount, support?.mounts == false {
             canMount = false
             warnings.append("This wpc can't mount folders (no `create --mount`); linked folders were copied.")
+        }
+        var nginx = false
+        if wantsNginx {
+            nginx = support?.webServer == true
+            if !nginx {
+                warnings.append("This wpc can't run nginx (no `create --web-server`); the site runs on Apache.")
+            }
+        }
+        let nginxConfig = plan.nginxIncludes + (plan.nginxSiteRules == nil ? [] : ["the rules added to site.conf.hbs"])
+        if !nginx, !nginxConfig.isEmpty {
+            warnings.append("Custom nginx config is not carried over to Apache: \(nginxConfig.joined(separator: ", ")).")
         }
 
         let work = try LocalWPDumper.makeWorkFolder()
@@ -151,6 +174,9 @@ public struct Migrator: Sendable {
         let parked: [String]
         do {
             (mounts, skippedLinks) = try placeFiles(in: wordpress, canMount: canMount)
+            if nginx {
+                try placeNginxConfig(in: folder.appendingPathComponent("nginx"))
+            }
             parked = try BootCode.park(in: wordpress)
         } catch {
             discardFolder(folder)
@@ -166,6 +192,7 @@ public struct Migrator: Sendable {
                 domain: domain,
                 phpVersion: options.phpVersion ?? plan.phpVersion,
                 multisite: site.multisite.wpcValue,
+                webServer: nginx ? .nginx : nil,
                 mounts: mounts
             )
         } catch {
@@ -249,6 +276,7 @@ public struct Migrator: Sendable {
             dumpFile: keptDump,
             mounts: mounts,
             skippedLinks: skippedLinks,
+            webServer: nginx ? .nginx : .apache,
             addons: addons + (https ? ["https"] : []),
             warnings: warnings
         )
@@ -316,6 +344,22 @@ public struct Migrator: Sendable {
     }
 
     /// Copies with APFS clones where the volume supports them.
+    /// Puts the custom nginx files LocalWP includes, and the rules added to
+    /// its `site.conf.hbs`, in the folder wpc includes in the site's nginx
+    /// server block.
+    private func placeNginxConfig(in destination: URL) throws {
+        guard !plan.nginxIncludes.isEmpty || plan.nginxSiteRules != nil else { return }
+        let manager = FileManager.default
+        let source = plan.site.path.appendingPathComponent("conf/nginx")
+        try manager.createDirectory(at: destination, withIntermediateDirectories: true)
+        for name in plan.nginxIncludes {
+            try manager.copyItem(at: source.appendingPathComponent(name), to: destination.appendingPathComponent(name))
+        }
+        if let rules = plan.nginxSiteRules {
+            try rules.write(to: destination.appendingPathComponent(LocalWPPlan.siteRulesFileName), atomically: true, encoding: .utf8)
+        }
+    }
+
     private func clone(_ source: String, to destination: String) throws {
         let result = try runner.run(URL(fileURLWithPath: "/bin/cp"), ["-c", "-R", source, destination])
         guard result.exitCode == 0 else {

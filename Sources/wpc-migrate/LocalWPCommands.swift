@@ -23,6 +23,7 @@ struct LocalWPLocation: ParsableArguments {
 }
 
 extension SymlinkMode: ExpressibleByArgument {}
+extension WebServer: ExpressibleByArgument {}
 
 extension LocalWPCommand {
     struct List: ParsableCommand {
@@ -107,6 +108,9 @@ extension LocalWPCommand {
         @Option(help: "PHP version for the new site (default: the LocalWP site's).")
         var phpVersion: String?
 
+        @Option(help: "Web server for the new site: apache or nginx (default: the LocalWP site's).")
+        var webServer: WebServer?
+
         @Flag(help: "Turn on HTTPS for the new site.")
         var https = false
 
@@ -151,7 +155,7 @@ extension LocalWPCommand {
         private func migrate() throws {
             let catalog = try location.catalog()
             let localSite = try catalog.find(site)
-            let plan = try LocalWPPlan(site: localSite)
+            let plan = try LocalWPPlan(site: localSite, stockNginxFolder: catalog.stockNginxFolder(for: localSite))
             var options = makeOptions()
 
             let runner = ProcessRunner(echoStderr: verbose)
@@ -170,6 +174,7 @@ extension LocalWPCommand {
                     options: options,
                     siteFolder: migrator.siteFolder.path,
                     domain: migrator.domain,
+                    webServer: migrator.webServer ?? .apache,
                     strategy: options.dumpFile == nil ? dumper.strategy(for: localSite) : nil,
                     addons: migrator.addons + (migrator.usesHTTPS ? ["https"] : [])
                 )
@@ -197,6 +202,7 @@ extension LocalWPCommand {
             print("Migrated \(localSite.name) to \(result.url)")
             print("  slug: \(result.slug)")
             print("  folder: \(result.path)")
+            print("  web server: \(result.webServer.rawValue)")
             print(resetAdmin ? "  login: admin / password" : "  login: your LocalWP site's users and passwords")
             for (path, target) in result.mounts.sorted(by: { $0.key < $1.key }) {
                 print("  mount: \(path) -> \(target)")
@@ -215,7 +221,15 @@ extension LocalWPCommand {
                 throw ValidationError("The site has \(links.count) symlink(s) to paths outside it. Pass --symlinks mount, copy, or skip.")
             }
 
-            Self.prompt("This site has \(links.count) symlink(s) to paths outside it. Mount a folder to keep it live, copy its contents, or skip the link.\n")
+            var legend = "This site has \(links.count) symlink(s) to paths outside it. For each one, answer:\n"
+            if links.contains(where: \.isMountable) {
+                legend += "  m  mount the linked folder, so edits in it show up in the site straight away.\n"
+                legend += "     The link becomes an empty folder in the site's files; the container shows the linked folder there.\n"
+            }
+            legend += "  c  copy what the link points to into the site\n"
+            legend += "  s  skip the link, leaving it out of the new site\n"
+            legend += "Press Enter for the capitalized choice.\n"
+            Self.prompt(legend)
             var modes: [String: SymlinkMode] = [:]
             for link in links {
                 let kind = link.targetIsDirectory ? "folder" : "file"
@@ -258,6 +272,7 @@ extension LocalWPCommand {
             options.parentFolder = path.map { ($0 as NSString).expandingTildeInPath }
             options.domain = domain
             options.phpVersion = phpVersion
+            options.webServer = webServer
             options.https = https
             options.mailpit = !noMailpit
             options.resetAdmin = resetAdmin
@@ -277,6 +292,7 @@ struct DryRun: Encodable {
     var wordpressFolder: String
     var siteFolder: String
     var domain: String?
+    var webServer: WebServer
     var status: String
     var php: String?
     var wordpress: String?
@@ -286,15 +302,18 @@ struct DryRun: Encodable {
     var dumpStrategy: DumpStrategy?
     var externalLinks: [ExternalLink]
     var internalLinks: [InternalLink]
+    var nginxIncludes: [String]
+    var nginxSiteRules: String?
     var addons: [String]
     var warnings: [String]
 
-    init(plan: LocalWPPlan, options: MigrationOptions, siteFolder: String, domain: String?, strategy: DumpStrategy?, addons: [String]) {
+    init(plan: LocalWPPlan, options: MigrationOptions, siteFolder: String, domain: String?, webServer: WebServer, strategy: DumpStrategy?, addons: [String]) {
         localSiteID = plan.site.id
         name = options.name ?? plan.site.name
         wordpressFolder = plan.site.wordpressFolder.path
         self.siteFolder = siteFolder
         self.domain = domain
+        self.webServer = webServer
         status = plan.site.status.rawValue
         php = options.phpVersion ?? plan.phpVersion
         wordpress = plan.wordpressVersion
@@ -304,6 +323,11 @@ struct DryRun: Encodable {
         dumpStrategy = strategy
         externalLinks = plan.externalLinks
         internalLinks = plan.internalLinks
+        nginxIncludes = webServer == .nginx ? plan.nginxIncludes : []
+        nginxSiteRules = webServer == .nginx ? plan.nginxSiteRules : nil
+        if nginxSiteRules != nil {
+            nginxIncludes.append("\(LocalWPPlan.siteRulesFileName) (rules added to site.conf.hbs)")
+        }
         self.addons = addons
         warnings = plan.warnings
     }
@@ -316,6 +340,7 @@ struct DryRun: Encodable {
             "Domain:        \(domain ?? "none")",
             "WordPress:     \(wordpress ?? "unknown")",
             "PHP:           \(php ?? "wpc default")",
+            "Web server:    \(webServer.rawValue)",
             "Database:      \(database ?? "unknown"), table prefix \(tablePrefix)",
             "Multisite:     \(multisite)",
             "Export via:    \(dumpStrategy?.summary ?? "the --dump file")",
@@ -323,6 +348,7 @@ struct DryRun: Encodable {
         ]
         lines += externalLinks.filter(\.targetExists).map { "Symlink:       \($0.path) -> \($0.target) (\($0.targetIsDirectory ? "folder" : "file"))" }
         lines += internalLinks.map { "Symlink:       \($0.path) -> \($0.destination) (made relative)" }
+        lines += nginxIncludes.map { "nginx config:  \($0)" }
         lines += warnings.map { "warning: \($0)" }
         return lines.joined(separator: "\n")
     }
