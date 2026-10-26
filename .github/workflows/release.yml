@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  push:
+    tags: ['[0-9]+.[0-9]+.[0-9]+']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build and release
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+      ASSET: wpc-migrate-macos-arm64.tar.gz
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - name: Build
+        run: swift build -c release --arch arm64
+      - name: Check the version
+        run: |
+          bin=$(swift build -c release --arch arm64 --show-bin-path)
+          version=$("$bin/wpc-migrate" --version)
+          if [ "$version" != "$TAG" ]; then
+            echo "wpc-migrate reports $version, the tag is $TAG."
+            exit 1
+          fi
+      - name: Package
+        run: |
+          bin=$(swift build -c release --arch arm64 --show-bin-path)
+          tar -czf "$ASSET" -C "$bin" wpc-migrate
+          shasum -a 256 "$ASSET" > "$ASSET.sha256"
+      - name: Release notes
+        run: awk -v tag="$TAG" 'index($0, "## [" tag "]") == 1 { found = 1; next } found && /^(## )?\[/ { exit } found' CHANGELOG.md > notes.md
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$TAG" "$ASSET" "$ASSET.sha256" --title "$TAG" --notes-file notes.md --verify-tag
