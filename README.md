@@ -70,7 +70,7 @@ wpc-migrate localwp <site> [options]
 - **Subdomain networks.** HTTPS is turned on, because wp-container serves a subdomain network's sites as `https://<site>.<domain>` through its HTTPS proxy. Links stored as `http://` are moved to `https://`.
 - **Must-use plugins and drop-ins.** wp-container installs WordPress on the site's first start, before the database is imported. `mu-plugins` and `wp-content` drop-ins are set aside for that first start, so code that expects the site's tables can't stop the install, and put back before the import.
 - **Symlinks.** Each symlink to a path outside the site is mounted, copied, or skipped:
-  - `mount` bind-mounts a linked folder, so edits in it show up in the site straight away. Only folders can be mounted, so a linked file is copied.
+  - `mount` bind-mounts a linked folder, so edits in it show up in the site straight away. Only folders can be mounted, so a linked file is copied. The link becomes an empty folder in the new site's files, and the container shows the linked folder at that path. The mount points at the folder's path, so after moving the folder, run `wpc mount remove <slug> <path>` and `wpc mount add <slug> <new-folder> <path>`, then restart the site.
   - `copy` copies what the link points to.
   - `skip` leaves the link out of the new site.
 

@@ -223,7 +223,8 @@ extension LocalWPCommand {
 
             var legend = "This site has \(links.count) symlink(s) to paths outside it. For each one, answer:\n"
             if links.contains(where: \.isMountable) {
-                legend += "  m  mount the linked folder, so edits in it show up in the site straight away\n"
+                legend += "  m  mount the linked folder, so edits in it show up in the site straight away.\n"
+                legend += "     The link becomes an empty folder in the site's files; the container shows the linked folder there.\n"
             }
             legend += "  c  copy what the link points to into the site\n"
             legend += "  s  skip the link, leaving it out of the new site\n"

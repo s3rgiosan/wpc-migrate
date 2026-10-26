@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- The symlink prompt explains each answer (`m` mount, `c` copy, `s` skip) and that Enter picks the capitalized one.
+- The symlink prompt explains each answer (`m` mount, `c` copy, `s` skip) and that Enter picks the capitalized one. It says that a mounted link becomes an empty folder in the site's files, and the README explains how to repoint a mount after moving its folder.
 
 ### Fixed
 
