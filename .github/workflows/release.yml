@@ -19,7 +19,7 @@ jobs:
       TAG: ${{ inputs.tag || github.ref_name }}
       ASSET: wpc-migrate-macos-arm64.tar.gz
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.TAG }}
       - name: Build
