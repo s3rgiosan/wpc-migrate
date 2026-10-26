@@ -11,7 +11,7 @@ wpc-migrate reads the LocalWP site's files and database, creates a wp-container 
 
 ## Requirements
 
-- macOS 14 or newer
+- macOS 14 or newer, on Apple silicon
 - LocalWP, with the site you want to move
 - The wp-container CLI (`wpc`) 0.3.0 or newer. Mounting linked folders needs a `wpc` whose `create` command accepts `--mount`; older versions copy those folders.
 
@@ -19,11 +19,28 @@ LocalWP does not need to be running. A stopped site's database is exported throu
 
 ## Install
 
+With [Homebrew](https://brew.sh):
+
+```sh
+brew install s3rgiosan/tap/wpc-migrate
+```
+
+Or download the binary from the [latest release](https://github.com/s3rgiosan/wpc-migrate/releases/latest):
+
+```sh
+curl -fsSL https://github.com/s3rgiosan/wpc-migrate/releases/latest/download/wpc-migrate-macos-arm64.tar.gz | tar -xz
+sudo install -m 0755 wpc-migrate /usr/local/bin/wpc-migrate
+```
+
+The binary is not signed with a Developer ID. A copy downloaded with a browser is quarantined, and macOS refuses to run it until `xattr -d com.apple.quarantine wpc-migrate` clears the flag.
+
+To build from source, which needs Swift 6:
+
 ```sh
 git clone https://github.com/s3rgiosan/wpc-migrate.git
 cd wpc-migrate
 swift build -c release
-install -m 0755 .build/release/wpc-migrate /usr/local/bin/wpc-migrate
+sudo install -m 0755 .build/release/wpc-migrate /usr/local/bin/wpc-migrate
 ```
 
 ## Usage
