@@ -73,7 +73,7 @@ public struct Migrator: Sendable {
     public var addons: [String] {
         var addons: [String] = []
         if plan.site.xdebug { addons.append("xdebug") }
-        if plan.site.redis { addons.append("redis") }
+        if plan.site.redis || plan.redisObjectCache { addons.append("redis") }
         if plan.site.elasticsearch { addons.append("elasticsearch") }
         if options.mailpit { addons.append("mailpit") }
         return addons
@@ -121,6 +121,9 @@ public struct Migrator: Sendable {
         if site.multisite == .subdomain, !options.https {
             let host = domain ?? "\(slug).localhost"
             warnings.append("Turned on HTTPS: subdomain network sites are served as https://<site>.\(host).")
+        }
+        if plan.redisObjectCache, !site.redis {
+            warnings.append("Turned on Redis: wp-content/object-cache.php is a Redis object-cache drop-in.")
         }
 
         // Apache is wpc's default, so only mounts and nginx need the help check.
@@ -219,10 +222,11 @@ public struct Migrator: Sendable {
 
             log("Starting the site.")
             try wpc.start(created.slug)
-            let left = try BootCode.restore(parked, in: wordpress)
-            if !left.isEmpty {
-                warnings.append("Left in wp-content/\(BootCode.parkingFolder) because the site already has them: \(left.joined(separator: ", ")).")
-            }
+            // wpc runs the import's wp-cli commands without the add-ons'
+            // environment, so an object-cache drop-in can't reach its server
+            // until the import is done.
+            let afterImport = parked.filter { $0 == "object-cache.php" }
+            var left = try BootCode.restore(parked.filter { !afterImport.contains($0) }, in: wordpress)
 
             log("Importing the database.")
             importResult = try wpc.importDatabase(
@@ -232,6 +236,10 @@ public struct Migrator: Sendable {
                 resetAdmin: options.resetAdmin
             )
             sourceURL = importResult.sourceURL ?? sourceURL
+            left += try BootCode.restore(afterImport, in: wordpress)
+            if !left.isEmpty {
+                warnings.append("Left in wp-content/\(BootCode.parkingFolder) because the site already has them: \(left.joined(separator: ", ")).")
+            }
         } catch {
             log("Migration failed; removing the new site.")
             removeSite(created.slug)

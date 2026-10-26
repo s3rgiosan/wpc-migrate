@@ -111,6 +111,15 @@ enum Fixtures {
 
         """
 
+    /// An object-cache drop-in that reads its settings from `WP_REDIS_*` constants.
+    static let redisObjectCache = """
+        <?php
+        foreach ( [ 'host', 'port' ] as $setting ) {
+        \t$constant = sprintf( 'WP_REDIS_%s', strtoupper( $setting ) );
+        }
+
+        """
+
     /// A minimal WordPress install the plan accepts.
     @discardableResult
     static func wordpress(in folder: TemporaryFolder, at path: String, config: String? = wpConfig) throws -> URL {

@@ -119,6 +119,19 @@ final class MigratorTests: XCTestCase {
         XCTAssertEqual(result.addons.last, "https")
     }
 
+    func testTurnsOnRedisForARedisObjectCacheDropIn() throws {
+        try Fixtures.wordpress(in: folder, at: "local/example-site/app/public")
+        try folder.write("local/example-site/app/public/wp-content/object-cache.php", Fixtures.redisObjectCache)
+        let runner = makeRunner()
+
+        let result = try makeMigrator(runner: runner).run()
+
+        let commands = runner.calls.map(WPCClient.commandName)
+        XCTAssertEqual(Array(commands.prefix(7)), ["list", "create", "create", "xdebug", "redis", "mailpit", "start"])
+        XCTAssertEqual(result.addons, ["xdebug", "redis", "mailpit"])
+        XCTAssertTrue(result.warnings.contains("Turned on Redis: wp-content/object-cache.php is a Redis object-cache drop-in."))
+    }
+
     func testCreatesNginxSitesOnNginx() throws {
         try Fixtures.wordpress(in: folder, at: "local/example-site/app/public")
         let runner = makeRunner()
@@ -206,6 +219,31 @@ final class MigratorTests: XCTestCase {
 
         XCTAssertEqual(seenAtStart.value, false)
         XCTAssertTrue(FileManager.default.fileExists(atPath: muPlugins + "/loader.php"))
+    }
+
+    func testParksTheObjectCacheDropInUntilTheImportIsDone() throws {
+        try Fixtures.wordpress(in: folder, at: "local/example-site/app/public")
+        try folder.write("local/example-site/app/public/wp-content/mu-plugins/loader.php", "<?php\n")
+        try folder.write("local/example-site/app/public/wp-content/object-cache.php", Fixtures.redisObjectCache)
+        let content = parent.appendingPathComponent("example-site/wordpress/wp-content").path
+        let muPluginsAtImport = LockedFlag()
+        let objectCacheAtImport = LockedFlag()
+        let base = makeRunner()
+        let runner = FakeRunner { arguments in
+            if WPCClient.commandName(arguments) == "db import" {
+                muPluginsAtImport.set(FileManager.default.fileExists(atPath: content + "/mu-plugins/loader.php"))
+                objectCacheAtImport.set(FileManager.default.fileExists(atPath: content + "/object-cache.php"))
+            }
+            return base.respond(arguments)
+        }
+
+        let result = try makeMigrator(runner: runner).run()
+
+        XCTAssertEqual(muPluginsAtImport.value, true)
+        XCTAssertEqual(objectCacheAtImport.value, false)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: content + "/object-cache.php"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: content + "/\(BootCode.parkingFolder)"))
+        XCTAssertFalse(result.warnings.contains { $0.contains(BootCode.parkingFolder) })
     }
 
     func testImportFailureDeletesTheSite() throws {

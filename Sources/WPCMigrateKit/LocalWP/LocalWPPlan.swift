@@ -46,6 +46,10 @@ public struct LocalWPPlan: Sendable {
     /// The statements added to LocalWP's stock `site.conf.hbs` server block
     /// that wp-container can include, or nil when there are none.
     public var nginxSiteRules: String?
+    /// Whether `wp-content/object-cache.php` reads `WP_REDIS_*` constants, as
+    /// the Redis Object Cache drop-in does. It needs a Redis server, which
+    /// wp-container's Redis add-on runs and points `WP_REDIS_HOST` at.
+    public var redisObjectCache = false
     public var warnings: [String]
 
     /// `stockNginxFolder` holds LocalWP's own nginx templates for the site's
@@ -78,6 +82,9 @@ public struct LocalWPPlan: Sendable {
             warnings.append("PHP \(php) has no wp-container image; the site will run on PHP \(Self.minimumPHP).")
             phpVersion = Self.minimumPHP
         }
+
+        let objectCache = try? Data(contentsOf: folder.appendingPathComponent("wp-content/object-cache.php"))
+        redisObjectCache = objectCache?.range(of: Data("WP_REDIS_".utf8)) != nil
 
         let links = SymlinkScanner.scan(folder)
         externalLinks = links.externalLinks
