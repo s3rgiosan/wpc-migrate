@@ -124,6 +124,26 @@ final class LocalWPPlanTests: XCTestCase {
         XCTAssertEqual(plan.warnings, ["LocalWP's stock nginx templates were not found, so rules added to site.conf.hbs are not carried over."])
     }
 
+    func testDetectsARedisObjectCacheDropIn() throws {
+        let folder = try TemporaryFolder()
+        try Fixtures.wordpress(in: folder, at: "example-site/app/public")
+        try folder.write("example-site/app/public/wp-content/object-cache.php", Fixtures.redisObjectCache)
+
+        let plan = try LocalWPPlan(site: Fixtures.site(path: folder.url.appendingPathComponent("example-site")))
+
+        XCTAssertTrue(plan.redisObjectCache)
+    }
+
+    func testIgnoresOtherObjectCacheDropIns() throws {
+        let folder = try TemporaryFolder()
+        try Fixtures.wordpress(in: folder, at: "example-site/app/public")
+        try folder.write("example-site/app/public/wp-content/object-cache.php", "<?php\n// Example memcached drop-in.\n")
+
+        let plan = try LocalWPPlan(site: Fixtures.site(path: folder.url.appendingPathComponent("example-site")))
+
+        XCTAssertFalse(plan.redisObjectCache)
+    }
+
     func testMissingWordPressThrows() throws {
         let folder = try TemporaryFolder()
         XCTAssertThrowsError(try LocalWPPlan(site: Fixtures.site(path: folder.url))) { error in

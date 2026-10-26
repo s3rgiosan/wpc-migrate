@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Each release on GitHub carries a prebuilt Apple silicon binary, and `brew install s3rgiosan/tap/wpc-migrate` installs it.
 
+### Fixed
+
+- A site whose `wp-content/object-cache.php` is a Redis drop-in, such as Redis Object Cache's, gets wp-container's Redis add-on even when LocalWP has Redis turned off, so the drop-in has a server to connect to.
+- The `object-cache.php` drop-in is put back once `wpc db import` is done, so the import's `wp cache flush` runs on WordPress's built-in cache.
+
 ## [1.3.0] - 2026-10-26
 
 ### Added
